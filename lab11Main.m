@@ -1,10 +1,10 @@
-%addpath(genpath('/Users/abbychen/Documents/senioryear/robot/_matlab_api'))
+addpath(genpath('/Users/abbychen/Documents/senioryear/robot/_matlab_api'))
 %set up robot
-poseInit = [15*0.0254;9*0.0254;pi()/2.0];
-initVec = [15*0.0254;9*0.0254;pi()/2.0];
-initialPoseVec = [15*0.0254;9*0.0254;pi()/2.0] * (1+0.1*randn);
-robotPose = pose(15*0.0254,9*0.0254,pi()/2.0);
-rIF = robotIF(5,true, initialPoseVec);
+poseInit = [0.6096;0.6096;pi()/2.0];
+
+robotPose = pose(0.6096,0.6096,pi()/2.0);
+
+rIF = robotIF(5,true, poseInit);
 rIF.startLaser();
 doReadLoggedImages = false;
 logOn = false; rstTraj = false;
@@ -16,12 +16,19 @@ worldLineArray = worldModel.createXYAxes();
 nPts = 10;
 wallsShape = polyLineShape(worldLineArray); % create wall body from transposed lines
 rIF.addObjects(wallsShape);
-pause(2)
-npts = 10;
-pts1 = [worldLineArray(1:2,2) worldLineArray(1:2,2)];
-pts2 = [worldLineArray(1:2,1) worldLineArray(1:2,3)];
 
-%start mapping plots
+lines_p1 = [worldLineArray(1:2,2) worldLineArray(1:2,2)];
+lines_p2 = [worldLineArray(1:2,1) worldLineArray(1:2,3)];
+
+k = 0.25;
+gain = 0.2;
+errThresh = 0.00001;
+gradThresh = 0.0005;
+
+mrpl = MrplSystem(rIF, true, false, poseInit, k, lines_p1, lines_p2, gain, errThresh, gradThresh, true);
+
+vmax = 0.2;
+
 figure(2);
 ph1 = plot(worldLineArray(1,:),worldLineArray(2,:),'b');
 axis([-.2 1.4 0 1.2])
@@ -41,53 +48,22 @@ points = [rImage.xArray ; rImage.yArray ; ones(1,len)];
 worldLidarPts = pose(initialPoseVec)*points;
 ph3 = plot(worldLidarPts(1,:),worldLidarPts(2,:),'r.','MarkerSize',12);
 handler = robotKeypressDriver(gcf);
+mrpl.trajectoryFollower.setLogInfo(ph1, ph2, ph3)
 hold off
 pause(2)
 latestPoseVec = robotPose;
-first = true;
 
-while true
-    %if first iteration of while loop, set up odometry and range variables
-    if first
-        odomStuff = stateEstimator(rIF, initVec, .25, pts1, ...
-            pts2, .2, .00001, .0005);
-        tEnc = odomStuff.encoderStartTimeStamp;
-        first = false;
-        newRange = false;
-    end
-    
-    %peek to see if there's a new laser image
-    laserVal = rIF.laser.LatestMessage.Ranges();
-    if laserVal ~= ranges
-        ranges = laserVal;
-        newRange = true;
-    end
-    
-    %wait to get a new encoder reading
-    while tEnc == odomStuff.encoderLastTimeStamp
-        pause(.001)
-    end
-    %update encoder vals;
-    tEnc = odomStuff.encoderLastTimeStamp;
-    odomVec = pose(odomStuff.getVec);
 
-    % Draw it
-    if newRange
-        rImage = pointCloud(ranges,lidarSkip,true);
-        len = size(rImage.xArray,2);
-        points = [rImage.xArray ; rImage.yArray ; ones(1,len)];
-        latestPoseVec = odomStuff.processRangeImage(points, 200);
-        newRange = false;
-    else
-        latestPoseVec = odomVec;
-    end
+xf = 0.3048; yf = 0.9144; thf = pi()/2.0;
+mrpl.executeTrajectoryToAbsPose(xf, yf, thf, vmax, 1.0);
 
-    worldBodyPts = latestPoseVec*bodyPts;
-    worldLidarPts = latestPoseVec*points;
+xf = 0.9144; yf = 0.3048; thf = 0.0;
+mrpl.executeTrajectoryToAbsPose(xf, yf, thf, vmax, 1.0);
 
-    set(ph1, 'XData', worldLineArray(1,:), 'YData',worldLineArray(2,:));
-    set(ph2, 'XData',worldBodyPts(1,:), 'YData',worldBodyPts(2,:));
-    set(ph3, 'XData',worldLidarPts(1,:), 'YData',worldLidarPts(2,:));
-    handler.drive(rIF, 1.2)
-end
+xf = 0.6096; yf = 0.6096; thf = pi()/2.0;
+mrpl.executeTrajectoryToAbsPose(xf, yf, thf, vmax, 1.0);
 
+figure(3);
+hold on;
+plot(mrpl.ctrler.ref_traj(1,:), mrpl.ctrler.ref_traj(2,:), "b");
+plot(mrpl.ctrler.act_traj(1,:), mrpl.ctrler.act_traj(2,:), "g");

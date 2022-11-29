@@ -1,0 +1,49 @@
+addpath(genpath('/Users/abbychen/Documents/senioryear/robot/_matlab_api'))
+%set up robot
+poseInit = [0.6096;0.6096;pi()/2.0];
+
+robotPose = pose(0.6096,0.6096,pi()/2.0);
+
+rIF = robotIF(5,true, poseInit);
+rIF.startLaser();
+doReadLoggedImages = false;
+logOn = false; rstTraj = false;
+
+% Set up lines
+worldLineArray = worldModel.createXYAxes();
+
+%Generate the map with the objects in it.
+nPts = 10;
+wallsShape = polyLineShape(worldLineArray); % create wall body from transposed lines
+rIF.addObjects(wallsShape);
+
+lines_p1 = [worldLineArray(1:2,2) worldLineArray(1:2,2)];
+lines_p2 = [worldLineArray(1:2,1) worldLineArray(1:2,3)];
+
+k = 0.25;
+gain = 0.2;
+errThresh = 0.00001;
+gradThresh = 0.0005;
+
+mrpl = MrplSystem(rIF, false, false, poseInit, k, lines_p1, lines_p2, gain, errThresh, gradThresh, false);
+
+vmax = 0.2;
+
+% xf = 0.3048; yf = 0.3048; thf = 0.0;
+% mrpl.executeTrajectoryToRelativePose(xf, yf, thf);
+% 
+% xf = -0.6096; yf = -0.6096; thf = -pi()/2.0;
+% mrpl.executeTrajectoryToRelativePose(xf, yf, thf);
+% 
+% xf = -0.3048; yf = 0.3048; thf = pi()/2.0;
+% mrpl.executeTrajectoryToRelativePose(xf, yf, thf);
+
+xf = 0.3048; yf = 0.9144; thf = pi()/2.0;
+mrpl.executeTrajectoryToAbsPose(xf, yf, thf, vmax, 1.0);
+
+xf = 0.9144; yf = 0.3048; thf = 0.0;
+mrpl.executeTrajectoryToAbsPose(xf, yf, thf, vmax, 1.0);
+
+xf = 0.6096; yf = 0.6096; thf = pi()/2.0;
+mrpl.executeTrajectoryToAbsPose(xf, yf, thf, vmax, 1.0);
+
