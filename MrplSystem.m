@@ -197,11 +197,49 @@ classdef MrplSystem < handle
             obj.currentRefPose = goalPos;
         end
 
+        function [acq_pose_vec, nominal_pose_vec] = pickDropObject(obj, object_pose)
+            [x, y, th] = obj.estRobot.getVec();
+
+            % Turns the robot, in place, to face the origin of the frame at the acquisition pose.
+            % Do this only if the angle is relatively large because (later step) trajectory
+            % generation can do small amounts of turning for you.
+
+            turn_angle = atan2(object_pose.y() - y, object_pose.x() - x);
+
+            if abs(turn_angle) > (pi/4.0) % If greater than 45 degree turn
+            obj.turnRelAngle(turn_angle, false);
+            end
+
+            % Generates a trajectory and drives the robot to the acquisition pose.
+            acq_pose_vec = MrplSystem.acquisitionPose(object_pose.getPose(), robotModel.frontOffset,...
+                robotModel.objOffset, robotModel.forks_length + .002);
+
+            obj.executeTrajectoryToAbsPose(acq_pose(1), acq_pose(2), acq_pose(3), vmax, 1.0);
+
+            % Finds the object in a laser image taken at the acquisition pose.
+            [x, y, th] = obj.findNearestSail();
+            endGoal = [x;y;th];
+
+            % Computes an ideal pickup pose based on positioning the robot fork base plate 7
+            % cm or so directly in front of the pallet face to make fork insertion a simple straight
+            % motion. If this pose is more than about 4 cm from your present position, go there. 
+            nominal_pose_vec = MrplSystem.acquisitionPose(endGoal, robotModel.frontOffset,...
+         robotModel.objOffset, robotModel.forks_length + .002);
+            obj.executeTrajectoryToAbsPose(nominal_pose_vec(1), nominal_pose_vec(2), nominal_pose_vec(3), vmax, 1.0);
+            
+            obj.rIF.stop();
+            pause(0.5);
+            obj.executeTrajectoryToRelativePose(.007, 0, 0, .01, 1, false);
+
+            % Optionally looks at the pallet again to fine tune your next motion. 
+        end
+
         function forkRoutine(obj)
             obj.rIF.forksUp()
             pause(2)
             obj.rIF.forksDown();
         end
+
         function shutdown(obj)
             obj.rIF.stopLaser();
             obj.rIF.stop();
