@@ -1,4 +1,4 @@
-addpath(genpath('/Users/abbychen/Documents/senioryear/robot/_matlab_api'))
+%addpath(genpath('/Users/abbychen/Documents/senioryear/robot/_matlab_api'))
 poseInit = [0.2;0.2;-pi*.5];
 
 robotPose = pose(0.2,0.2,-pi*.5);
