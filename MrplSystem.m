@@ -11,6 +11,8 @@ classdef MrplSystem < handle
         ctrler;
         rstTraj;
         perception;
+        rob;
+        scr_fig;
     end
     
     methods(Static = true)
@@ -56,8 +58,8 @@ classdef MrplSystem < handle
     end
 
     methods
-        function obj = MrplSystem(rIF, logOn, rstTraj, vecInit, k, lineArray, gain, errThresh, gradThresh, useMap)
-            obj.estRobot = stateEstimator(rIF, vecInit, k, lineArray, gain, errThresh, gradThresh, useMap);
+        function obj = MrplSystem(rIF, logOn, rstTraj, vecInit, k, lineArray, gain, errThresh, gradThresh, useMap, rob)
+            obj.estRobot = stateEst(rIF, vecInit, k, lineArray, gain, errThresh, gradThresh, useMap);
             obj.maxVelocity = 0.2;
             obj.rIF = rIF;
             obj.currentRefPose = Pose(vecInit(1), vecInit(2), vecInit(3));
@@ -65,6 +67,8 @@ classdef MrplSystem < handle
             obj.ctrler = controller(0.25, true, logOn);
             obj.trajectoryFollower = TrajectoryFollower(rIF, obj.ctrler, obj.estRobot, logOn);
             obj.perception = pointCloudPerceptor2();
+            obj.rob = rIF;
+            obj.scr_fig = rIF.scr_fig;
         end
 
         function addObjects(obj, shapes)
@@ -243,6 +247,16 @@ classdef MrplSystem < handle
                 [x, y, th] = obj.findNearestSail();
                 endGoal = [x;y;th];
 
+                goalPos = Pose(x, y, th);
+                currPos = obj.getCurrentPose;
+                currPose = Pose(currPos(1), currPos(2), currPos(3));
+    
+                transform2 = goalPos.bToA();
+                transform1 = currPose.bToA();
+                transform = transform1 * transform2;
+
+                absoluteGoalPos = Pose.matToPoseVec(transform);
+
                 % Computes an ideal pickup pose based on positioning the robot fork base plate 7
                 % cm or so directly in front of the pallet face to make fork insertion a simple straight
                 % motion. If this pose is more than about 4 cm from your present position, go there.
@@ -253,8 +267,19 @@ classdef MrplSystem < handle
 
                 obj.rIF.stop();
                 pause(0.5);
-                obj.executeTrajectoryToRelativePose(.01, 0, 0, .01, 1);
-                %obj.moveRelDist(-.005, false)
+
+%                 goalPos = Pose(absoluteGoalPos(1), absoluteGoalPos(2), absoluteGoalPos(3));
+%                 currPos = obj.getCurrentPose;
+%                 currPose = Pose(currPos(1), currPos(2), currPos(3));
+%     
+%                 transform2 = goalPos.bToA();
+%                 transform1 = currPose.aToB();
+%                 transform = transform1 * transform2;
+    
+                %relPos = Pose.matToPoseVec(transform);
+
+                %obj.executeTrajectoryToRelativePose(.01, 0, 0, .01, 1);
+                obj.moveRelDist(0.063, false)
             else
                 vec = obj.estRobot.getVec();
                 x = vec(1); y = vec(2); th = vec(3);
