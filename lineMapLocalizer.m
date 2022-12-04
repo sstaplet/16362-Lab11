@@ -12,22 +12,20 @@ classdef lineMapLocalizer < handle
     end
     
     properties(Access = public)
-        lines_p1 = [];
-        lines_p2 = [];
+        lineArray;
         gain = 0.0;
         errThresh = 0.0;
         gradThresh = 0.0;
     end
 
     methods
-        function obj = lineMapLocalizer(lines_p1,lines_p2, gain, errThresh, gradThresh)
+        function obj = lineMapLocalizer(lineArray, gain, errThresh, gradThresh)
             %gain = 0.3;
             %errThresh = 0.01; % threshold on sqrt of fitError
             %gradThresh = 0.0005; % threshold on norm of gradient
 
             % create a lineMapLocalizer
-            obj.lines_p1 = lines_p1;
-            obj.lines_p2 = lines_p2;
+            obj.lineArray = lineArray;
             obj.gain = gain;
             obj.errThresh = errThresh;
             obj.gradThresh = gradThresh;
@@ -39,11 +37,11 @@ classdef lineMapLocalizer < handle
             % pi is an array of 2d points
             % throw away homogenous flag
             pi = pi(1:2,:);
-            r2Array = zeros(size(obj.lines_p1,2),size(pi,2));
+            r2Array = zeros((size(obj.lineArray,2)-1),size(pi,2));
 
-            for i = 1:size(obj.lines_p1,2)
+            for i = 1:(size(obj.lineArray,2)-1)
                 [r2Array(i,:) , ~] = closestPointOnLineSegment(pi,...
-                obj.lines_p1(:,i),obj.lines_p2(:,i));
+                obj.lineArray(1:2, i), obj.lineArray(1:2, i+1));
             end
 
             ro2 = min(r2Array,[],1);

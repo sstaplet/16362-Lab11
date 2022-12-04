@@ -1,4 +1,4 @@
-addpath(genpath('/Users/abbychen/Documents/senioryear/robot/_matlab_api'))
+%addpath(genpath('/Users/abbychen/Documents/senioryear/robot/_matlab_api'))
 %set up robot
 poseInit = [0.6096;0.6096;pi()/2.0];
 
@@ -10,22 +10,22 @@ doReadLoggedImages = false;
 logOn = false; rstTraj = false;
 
 % Set up lines
-worldLineArray = worldModel.createXYAxes();
+lineArray = worldModel.createXYAxes();
 
 %Generate the map with the objects in it.
 nPts = 10;
 wallsShape = polyLineShape(worldLineArray); % create wall body from transposed lines
 rIF.addObjects(wallsShape);
 
-lines_p1 = [worldLineArray(1:2,2) worldLineArray(1:2,2)];
-lines_p2 = [worldLineArray(1:2,1) worldLineArray(1:2,3)];
+%lines_p1 = [worldLineArray(1:2,2) worldLineArray(1:2,2)];
+%lines_p2 = [worldLineArray(1:2,1) worldLineArray(1:2,3)];
 
 k = 0.25;
 gain = 0.2;
 errThresh = 0.00001;
 gradThresh = 0.0005;
 
-mrpl = MrplSystem(rIF, true, false, poseInit, k, lines_p1, lines_p2, gain, errThresh, gradThresh, true);
+mrpl = MrplSystem(rIF, true, false, poseInit, k, lineArray, gain, errThresh, gradThresh, true);
 
 vmax = 0.2;
 
@@ -45,7 +45,7 @@ ranges = rIF.laser.LatestMessage.Ranges();
 rImage = pointCloud(ranges,lidarSkip,true);
 len = size(rImage.xArray,2);
 points = [rImage.xArray ; rImage.yArray ; ones(1,len)];
-worldLidarPts = pose(initialPoseVec)*points;
+worldLidarPts = pose(poseInit)*points;
 ph3 = plot(worldLidarPts(1,:),worldLidarPts(2,:),'r.','MarkerSize',12);
 handler = robotKeypressDriver(gcf);
 mrpl.trajectoryFollower.setLogInfo(ph1, ph2, ph3)

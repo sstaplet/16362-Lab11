@@ -56,8 +56,8 @@ classdef MrplSystem < handle
     end
 
     methods
-        function obj = MrplSystem(rIF, logOn, rstTraj, vecInit, k, lines_p1, lines_p2, gain, errThresh, gradThresh, useMap)
-            obj.estRobot = stateEstimator(rIF, vecInit, k, lines_p1, lines_p2, gain, errThresh, gradThresh, useMap);
+        function obj = MrplSystem(rIF, logOn, rstTraj, vecInit, k, lineArray, gain, errThresh, gradThresh, useMap)
+            obj.estRobot = stateEstimator(rIF, vecInit, k, lineArray, gain, errThresh, gradThresh, useMap);
             obj.maxVelocity = 0.2;
             obj.rIF = rIF;
             obj.currentRefPose = Pose(vecInit(1), vecInit(2), vecInit(3));
@@ -65,6 +65,24 @@ classdef MrplSystem < handle
             obj.ctrler = controller(0.25, true, logOn);
             obj.trajectoryFollower = TrajectoryFollower(rIF, obj.ctrler, obj.estRobot, logOn);
             obj.perception = pointCloudPerceptor2();
+        end
+
+        function addObjects(obj, shapes)
+            obj.rIF.addObjects(shapes);
+        end
+
+        function [minPick, picks] = closestPose(obj, picks)
+            vec = obj.estRobot.getVec();
+            minDist = 10000;
+            for i = 1 : size(picks, 2)
+                dist = norm(picks(1:2,i)-vec(1:2,:));
+                if dist < minDist
+                    minPick = picks(:, i);
+                    besti = i;
+                    minDist = dist;
+                end
+            end
+            picks = [picks(:,1:besti-1), picks(:, besti+1:size(picks,2))];
         end
 
         function executeTrajectory(obj, trajectory)
@@ -127,7 +145,7 @@ classdef MrplSystem < handle
 
             %if the straight line distance is less than 7mm, this isn't
             %working ahhhhhh
-            if dist <= .0001
+            if (dist <= .0001 && thf == cp(3))
                 obj.moveStraightLineDistWithTrapezoidalTrajectory(vmax,dist,sgn);
             else
                 trajectory = cubicSpiralTrajectory.planTrajectory(xf, yf, thf, 1.0);
@@ -138,7 +156,7 @@ classdef MrplSystem < handle
             obj.currentRefPose = Pose(obj.currentRefPose.x() + xf, obj.currentRefPose.y() + yf, atan2(sin(th), cos(th)));
         end
 
-        function moveStraightLineDistWithTrapezoidalTrajectory(obj, vmax, dist)
+        function moveStraightLineDistWithTrapezoidalTrajectory(obj, vmax, dist, sgn)
             amax = 0.05 * 3;
             %create a trapezoidal trajectory and use robot trajectory
             traj = trapezoidalStepReferenceControl(amax, vmax, dist, 1.0);
@@ -197,46 +215,73 @@ classdef MrplSystem < handle
             obj.currentRefPose = goalPos;
         end
 
-        function [acq_pose_vec, nominal_pose_vec] = pickDropObject(obj, object_pose)
-            [x, y, th] = obj.estRobot.getVec();
+        function [acq_pose, nominal_pose_vec] = pickDropObject(obj, object_pose, isPick)
+            vmax = obj.maxVelocity;
+            vec = obj.estRobot.getVec();
+            if isPick
+                x = vec(1); y = vec(2); th = vec(3);
+                % Generates a trajectory and drives the robot to the acquisition pose.
+                poseVec = [object_pose.x(); object_pose.y(); object_pose.th()];
+                acq_pose = MrplSystem.acquisitionPose(poseVec, robotModel.frontOffset,...
+                    robotModel.objOffset, robotModel.forks_length + .175);
+                % Turns the robot, in place, to face the origin of the frame at the acquisition pose.
+                % Do this only if the angle is relatively large because (later step) trajectory
+                % generation can do small amounts of turning for you.
+                turn_angle = atan2(acq_pose(2) - y,acq_pose(1) - x) - th;
+                obj.turnRelAngle(turn_angle, false);
+                vec = obj.estRobot.getVec();
+                th = vec(3);
+                if th / poseVec(3) < 0
+                    poseVec(3) = -poseVec(3);
+                end
+                acq_pose = MrplSystem.acquisitionPose(poseVec, robotModel.frontOffset,...
+                    robotModel.objOffset, robotModel.forks_length + .175);
+                obj.executeTrajectoryToAbsPose(acq_pose(1), acq_pose(2), ...
+                    acq_pose(3), vmax, 1);
 
-            % Turns the robot, in place, to face the origin of the frame at the acquisition pose.
-            % Do this only if the angle is relatively large because (later step) trajectory
-            % generation can do small amounts of turning for you.
+                % Finds the object in a laser image taken at the acquisition pose.
+                [x, y, th] = obj.findNearestSail();
+                endGoal = [x;y;th];
 
-            turn_angle = atan2(object_pose.y() - y, object_pose.x() - x);
+                % Computes an ideal pickup pose based on positioning the robot fork base plate 7
+                % cm or so directly in front of the pallet face to make fork insertion a simple straight
+                % motion. If this pose is more than about 4 cm from your present position, go there.
+                nominal_pose_vec = MrplSystem.acquisitionPose(endGoal, robotModel.frontOffset,...
+                    robotModel.objOffset, robotModel.forks_length + .007);
+                obj.executeTrajectoryToRelativePose(nominal_pose_vec(1), ...
+                    nominal_pose_vec(2), nominal_pose_vec(3), vmax, 1.0);
 
-            if abs(turn_angle) > (pi/4.0) % If greater than 45 degree turn
-            obj.turnRelAngle(turn_angle, false);
+                obj.rIF.stop();
+                pause(0.5);
+                obj.executeTrajectoryToRelativePose(.01, 0, 0, .01, 1);
+                %obj.moveRelDist(-.005, false)
+            else
+                vec = obj.estRobot.getVec();
+                x = vec(1); y = vec(2); th = vec(3);
+                % Generates a trajectory and drives the robot to the acquisition pose.
+                poseVec = [object_pose.x(); object_pose.y(); object_pose.th()];
+                acq_pose = MrplSystem.acquisitionPose(poseVec, robotModel.frontOffset,...
+                    robotModel.objOffset, .007);
+                % Turns the robot, in place, to face the origin of the frame at the acquisition pose.
+                % Do this only if the angle is relatively large because (later step) trajectory
+                % generation can do small amounts of turning for you.
+                turn_angle = atan2(acq_pose(2) - y,acq_pose(1) - x) - th;
+                obj.turnRelAngle(turn_angle, false);
+                obj.executeTrajectoryToAbsPose(acq_pose(1), acq_pose(2), ...
+                    acq_pose(3), vmax, 1);
             end
-
-            % Generates a trajectory and drives the robot to the acquisition pose.
-            acq_pose_vec = MrplSystem.acquisitionPose(object_pose.getPose(), robotModel.frontOffset,...
-                robotModel.objOffset, robotModel.forks_length + .002);
-
-            obj.executeTrajectoryToAbsPose(acq_pose(1), acq_pose(2), acq_pose(3), vmax, 1.0);
-
-            % Finds the object in a laser image taken at the acquisition pose.
-            [x, y, th] = obj.findNearestSail();
-            endGoal = [x;y;th];
-
-            % Computes an ideal pickup pose based on positioning the robot fork base plate 7
-            % cm or so directly in front of the pallet face to make fork insertion a simple straight
-            % motion. If this pose is more than about 4 cm from your present position, go there. 
-            nominal_pose_vec = MrplSystem.acquisitionPose(endGoal, robotModel.frontOffset,...
-         robotModel.objOffset, robotModel.forks_length + .002);
-            obj.executeTrajectoryToAbsPose(nominal_pose_vec(1), nominal_pose_vec(2), nominal_pose_vec(3), vmax, 1.0);
-            
-            obj.rIF.stop();
-            pause(0.5);
-            obj.executeTrajectoryToRelativePose(.007, 0, 0, .01, 1, false);
-
-            % Optionally looks at the pallet again to fine tune your next motion. 
+            if isPick
+                obj.forkUp;
+            else
+                obj.forkDown;
+            end
+            pause(1);
         end
 
-        function forkRoutine(obj)
-            obj.rIF.forksUp()
-            pause(2)
+        function forkUp(obj)
+            obj.rIF.forksUp();
+        end
+        function forkDown(obj)
             obj.rIF.forksDown();
         end
 

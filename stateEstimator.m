@@ -3,15 +3,20 @@ classdef stateEstimator < odometryStateEstimator
         k;
         localizer;
         useMap;
+        map;
     end
 
     methods
         function obj = stateEstimator(rIF, vecInit, k, ...
-                lines_p1, lines_p2, gain, errThresh, gradThresh, useMap)   
+                lineArray, gain, errThresh, gradThresh, useMap)   
             obj = obj@odometryStateEstimator(rIF,vecInit);
             obj.useMap = useMap;
             obj.k = k;
-            obj.localizer = lineMapLocalizer(lines_p1, lines_p2, gain, errThresh, gradThresh);
+            obj.localizer = lineMapLocalizer(lineArray, gain, errThresh, gradThresh);
+        end
+
+        function setMap(obj, map)
+            obj.map =map;
         end
 
         function vec = getVec(obj)
